@@ -116,10 +116,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🔥 **Description:** {escape_markdown(desc) if desc else 'No description'}\n"
             f"🖊️ **Questions:** {total_q[0]}\n"
             f"⏱ **Time per question:** {time_disp}\n\n"
-            "🏁 *The quiz will begin when at least 2 people are ready to play. Send /stop to stop it.*"
+            "🏁 *Click 'I am ready!' to start the quiz.*"
         )
         
-        keyboard = [[InlineKeyboardButton("I am ready!  (0)", callback_data=f"ready_{quiz_id}")]]
+        keyboard = [[InlineKeyboardButton("I am ready! 🎯 (0)", callback_data=f"ready_{quiz_id}")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text(init_text, reply_markup=reply_markup, parse_mode="Markdown")
         return
@@ -623,7 +623,12 @@ async def handle_ready_click(update: Update, context: ContextTypes.DEFAULT_TYPE)
     ready_count = len(game["ready_users"])
     joined_count = len(game["joined_users"])
 
-    if ready_count >= 2:
+    # Check if this is from external sharing link (single player mode)
+    # In single player mode (private chat), start with just 1 ready user
+    is_private_chat = query.message.chat.type == "private"
+    min_ready_required = 1 if is_private_chat else 2
+
+    if ready_count >= min_ready_required:
         game["quiz_started"] = True
         await query.answer("🎯 Target achieved! Quiz start ho rahi hai...")
         
