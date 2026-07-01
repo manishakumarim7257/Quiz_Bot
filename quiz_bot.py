@@ -24,8 +24,8 @@ DB_FILE = "quiz_bot.db"
 GROUP_GAMES = {}
 
 # Conversation flow states
-TITLE, DESCRIPTION, QUESTIONS, TIMER = range(4)
-EDIT_TITLE, EDIT_DESC, EDIT_TIMER = range(4, 7)
+TITLE, DESCRIPTION, QUESTIONS, PRE_MESSAGE, TIMER = range(5)
+EDIT_TITLE, EDIT_DESC, EDIT_TIMER = range(5, 8)
 
 def escape_markdown(text):
     """Escape special characters for Telegram Markdown"""
@@ -181,9 +181,38 @@ async def receive_poll(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         "explanation": poll.explanation if poll.explanation else "", "pre_message": ""
     }
     context.user_data["quiz_build"]["questions"].append(q_data)
+    context.user_data["current_question_index"] = len(context.user_data["quiz_build"]["questions"]) - 1
     
     await update.message.reply_text(
         f"✅ Question added! Your quiz now has {len(context.user_data['quiz_build']['questions'])} question(s).\n\n"
+        "💬 **Optional:** Send a message/media (text, image, video, etc.) that will be shown BEFORE this question to provide context. "
+        "You can type /skip to ignore this and move to the next question."
+    )
+    return PRE_MESSAGE
+
+async def receive_pre_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    current_idx = context.user_data.get("current_question_index", -1)
+    
+    if current_idx < 0:
+        await update.message.reply_text("❌ Error: Question not found!")
+        return QUESTIONS
+    
+    # Handle /skip command
+    if update.message.text and update.message.text.lower() == "/skip":
+        context.user_data["quiz_build"]["questions"][current_idx]["pre_message"] = ""
+    else:
+        # Store text or media caption
+        if update.message.text:
+            context.user_data["quiz_build"]["questions"][current_idx]["pre_message"] = update.message.text
+        elif update.message.caption:
+            context.user_data["quiz_build"]["questions"][current_idx]["pre_message"] = update.message.caption
+        else:
+            context.user_data["quiz_build"]["questions"][current_idx]["pre_message"] = ""
+    
+    context.user_data.pop("current_question_index", None)
+    
+    await update.message.reply_text(
+        f"✅ Pre-message set! Your quiz now has {len(context.user_data['quiz_build']['questions'])} question(s).\n\n"
         "Send next question or /done to finish."
     )
     return QUESTIONS
@@ -300,7 +329,7 @@ async def show_summary_panel(query, context, quiz_id):
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
-        cursor.execute("SELECT title, timer FROM quizzes WHERE quiz_id = ?", (quiz_id,))
+        cursor.execute("SELECT title, description, timer FROM quizzes WHERE quiz_id = ?", (quiz_id,))
         quiz_data = cursor.fetchone()
         
         if not quiz_data:
@@ -308,7 +337,7 @@ async def show_summary_panel(query, context, quiz_id):
             conn.close()
             return
         
-        title, timer = quiz_data
+        title, description, timer = quiz_data
         cursor.execute("SELECT COUNT(*) FROM questions WHERE quiz_id = ?", (quiz_id,))
         total_q = cursor.fetchone()
         conn.close()
@@ -316,10 +345,12 @@ async def show_summary_panel(query, context, quiz_id):
         time_display = f"{timer} sec" if timer < 60 else f"{timer // 60} min"
         bot_username = context.bot.username if context.bot.username else "quiz_bot"
         escaped_title = escape_markdown(title)
+        escaped_desc = escape_markdown(description) if description else "No description"
         
         summary_text = (
             "👍 Here's your quiz:\n\n"
-            f"📚 {escaped_title}\n"
+            f"📚 **{escaped_title}**\n"
+            f"📝 **Description:** {escaped_desc}\n"
             f"🙋‍♂️ {total_q[0]} question(s) · ⏱ Time: {time_display}\n\n"
             f"🔗 External sharing link:\n"
             f"`https://t.me/{bot_username}?start=quiz_{quiz_id}`"
@@ -328,7 +359,7 @@ async def show_summary_panel(query, context, quiz_id):
         inline_keyboard = [
             [InlineKeyboardButton("🏁 Start Private Chat", callback_data=f"startprivate_{quiz_id}")],
             [InlineKeyboardButton("👥 Start in Group", url=f"https://t.me/{bot_username}?startgroup=quiz_{quiz_id}")],
-            [InlineKeyboardButton("📢 Share Quiz", url=f"https://t.me/share/url?url=https://t.me/{bot_username}?start=quiz_{quiz_id}")],
+            [InlineKeyboardButton("📢 Share Quiz", url=f"https://t.me/share/url?url=Check%20out%20this%20quiz:%20https://t.me/{bot_username}?start=quiz_{quiz_id}")],
             [InlineKeyboardButton("⚙️ Edit", callback_data=f"edit_{quiz_id}"), InlineKeyboardButton("📊 Status", callback_data=f"status_{quiz_id}")]
         ]
         reply_markup = InlineKeyboardMarkup(inline_keyboard)
@@ -341,7 +372,7 @@ async def show_summary_panel_text(update, context, quiz_id):
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
-        cursor.execute("SELECT title, timer FROM quizzes WHERE quiz_id = ?", (quiz_id,))
+        cursor.execute("SELECT title, description, timer FROM quizzes WHERE quiz_id = ?", (quiz_id,))
         quiz_data = cursor.fetchone()
         
         if not quiz_data:
@@ -349,7 +380,7 @@ async def show_summary_panel_text(update, context, quiz_id):
             conn.close()
             return
         
-        title, timer = quiz_data
+        title, description, timer = quiz_data
         cursor.execute("SELECT COUNT(*) FROM questions WHERE quiz_id = ?", (quiz_id,))
         total_q = cursor.fetchone()
         conn.close()
@@ -357,11 +388,13 @@ async def show_summary_panel_text(update, context, quiz_id):
         time_display = f"{timer} sec" if timer < 60 else f"{timer // 60} min"
         bot_username = context.bot.username if context.bot.username else "quiz_bot"
         escaped_title = escape_markdown(title)
+        escaped_desc = escape_markdown(description) if description else "No description"
         
         summary_text = (
             "👍 Quiz created successfully!\n\n"
             "🏁 Here's your quiz:\n"
-            f"📚 {escaped_title}\n"
+            f"📚 **{escaped_title}**\n"
+            f"📝 **Description:** {escaped_desc}\n"
             f"🙋‍♂️ {total_q[0]} question(s) · ⏱ Time: {time_display}\n\n"
             f"🔗 External sharing link:\n"
             f"`https://t.me/{bot_username}?start=quiz_{quiz_id}`"
@@ -370,7 +403,7 @@ async def show_summary_panel_text(update, context, quiz_id):
         inline_keyboard = [
             [InlineKeyboardButton("🏁 Start Private Chat", callback_data=f"startprivate_{quiz_id}")],
             [InlineKeyboardButton("👥 Start in Group", url=f"https://t.me/{bot_username}?startgroup=quiz_{quiz_id}")],
-            [InlineKeyboardButton("📢 Share Quiz", url=f"https://t.me/share/url?url=https://t.me/{bot_username}?start=quiz_{quiz_id}")],
+            [InlineKeyboardButton("📢 Share Quiz", url=f"https://t.me/share/url?url=Check%20out%20this%20quiz:%20https://t.me/{bot_username}?start=quiz_{quiz_id}")],
             [InlineKeyboardButton("⚙️ Edit", callback_data=f"edit_{quiz_id}"), InlineKeyboardButton("📊 Status", callback_data=f"status_{quiz_id}")]
         ]
         reply_markup = InlineKeyboardMarkup(inline_keyboard)
@@ -440,13 +473,13 @@ async def handle_quiz_status(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await query.edit_message_text(text="❌ Quiz not found!")
         return
     
-    title, desc, timer = quiz_data
+    title, description, timer = quiz_data
     time_display = f"{timer} sec" if timer < 60 else f"{timer // 60} min"
     
     status_text = (
         f"📊 **Quiz Status**\n\n"
         f"📚 **Title:** {escape_markdown(title)}\n"
-        f"ℹ️ **Description:** {escape_markdown(desc) if desc else 'No description'}\n"
+        f"📝 **Description:** {escape_markdown(description) if description else 'No description'}\n"
         f"❓ **Total Questions:** {total_q[0]}\n"
         f"⏱️ **Time per Q:** {time_display}\n"
         f"✅ **Status:** Active"
@@ -892,6 +925,7 @@ def main():
             TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_title)],
             DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_desc), CommandHandler("skip", receive_desc)],
             QUESTIONS: [CommandHandler("undo", handle_undo), CommandHandler("done", finish_quiz_creation), MessageHandler(filters.POLL, receive_poll)],
+            PRE_MESSAGE: [MessageHandler(filters.TEXT | filters.PHOTO | filters.VIDEO | filters.DOCUMENT | filters.ANIMATION, receive_pre_message), CommandHandler("skip", receive_pre_message)],
             TIMER: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_timer_text)]
         },
         fallbacks=[CommandHandler("cancel", cancel)],
