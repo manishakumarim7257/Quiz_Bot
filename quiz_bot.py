@@ -360,7 +360,7 @@ async def show_summary_panel(query, context, quiz_id):
             [InlineKeyboardButton("🏁 Start Private Chat", callback_data=f"startprivate_{quiz_id}")],
             [InlineKeyboardButton("👥 Start in Group", url=f"https://t.me/{bot_username}?startgroup=quiz_{quiz_id}")],
             [InlineKeyboardButton("📢 Share Quiz", url=f"https://t.me/share/url?url=Check%20out%20this%20quiz:%20https://t.me/{bot_username}?start=quiz_{quiz_id}")],
-            [InlineKeyboardButton("⚙️ Edit", callback_data=f"edit_{quiz_id}"), InlineKeyboardButton("📊 Status", callback_data=f"status_{quiz_id}")]
+            [InlineKeyboardButton("✏️ Edit", callback_data=f"edit_{quiz_id}")]
         ]
         reply_markup = InlineKeyboardMarkup(inline_keyboard)
         await query.message.reply_text(summary_text, reply_markup=reply_markup, parse_mode="Markdown")
@@ -404,7 +404,7 @@ async def show_summary_panel_text(update, context, quiz_id):
             [InlineKeyboardButton("🏁 Start Private Chat", callback_data=f"startprivate_{quiz_id}")],
             [InlineKeyboardButton("👥 Start in Group", url=f"https://t.me/{bot_username}?startgroup=quiz_{quiz_id}")],
             [InlineKeyboardButton("📢 Share Quiz", url=f"https://t.me/share/url?url=Check%20out%20this%20quiz:%20https://t.me/{bot_username}?start=quiz_{quiz_id}")],
-            [InlineKeyboardButton("⚙️ Edit", callback_data=f"edit_{quiz_id}"), InlineKeyboardButton("📊 Status", callback_data=f"status_{quiz_id}")]
+            [InlineKeyboardButton("✏️ Edit", callback_data=f"edit_{quiz_id}")]
         ]
         reply_markup = InlineKeyboardMarkup(inline_keyboard)
         await update.message.reply_text(summary_text, reply_markup=reply_markup, parse_mode="Markdown")
@@ -499,9 +499,10 @@ async def edit_quiz_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     quiz_id = int(query.data.split("_")[1])
     
     keyboard = [
-        [InlineKeyboardButton("📝 Edit title", callback_data=f"edtitle_{quiz_id}")],
-        [InlineKeyboardButton("ℹ️ Edit description", callback_data=f"eddesc_{quiz_id}")],
-        [InlineKeyboardButton("⏱ Edit timer settings", callback_data=f"edtime_{quiz_id}")],
+        [InlineKeyboardButton("❓ Edit Question", callback_data=f"edquestion_{quiz_id}")],
+        [InlineKeyboardButton("📝 Edit Title", callback_data=f"edtitle_{quiz_id}")],
+        [InlineKeyboardButton("ℹ️ Edit Description", callback_data=f"eddesc_{quiz_id}")],
+        [InlineKeyboardButton("⏱ Edit Timer", callback_data=f"edtime_{quiz_id}")],
         [InlineKeyboardButton("Back 🔙", callback_data=f"backto_{quiz_id}")]
     ]
     await query.edit_message_text(
@@ -519,6 +520,42 @@ async def back_to_summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ==========================================
 # ⚙️ FULLY OPERATIONAL QUIZ EDITOR HANDLERS
 # ==========================================
+
+async def edit_question_trigger(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show list of questions to edit"""
+    query = update.callback_query
+    await query.answer()
+    quiz_id = int(query.data.split("_")[1])
+    
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, question_text FROM questions WHERE quiz_id = ?", (quiz_id,))
+    questions = cursor.fetchall()
+    conn.close()
+    
+    if not questions:
+        await query.edit_message_text(
+            text="❌ No questions found in this quiz!",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data=f"edit_{quiz_id}")]])
+        )
+        return
+    
+    text = "📚 **Select a question to edit:**\n\n"
+    keyboard = []
+    
+    for idx, (q_id, q_text) in enumerate(questions, 1):
+        # Truncate long question text for display
+        display_text = q_text[:30] + "..." if len(q_text) > 30 else q_text
+        text += f"{idx}. {escape_markdown(display_text)}\n"
+        keyboard.append([InlineKeyboardButton(f"Edit Q{idx}", callback_data=f"editq_{quiz_id}_{q_id}")])
+    
+    keyboard.append([InlineKeyboardButton("🔙 Back", callback_data=f"edit_{quiz_id}")])
+    
+    await query.edit_message_text(
+        text=text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="Markdown"
+    )
 
 async def edit_title_trigger(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
@@ -964,6 +1001,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_quiz_status, pattern="^status_"))
     app.add_handler(CallbackQueryHandler(edit_quiz_menu, pattern="^edit_"))
     app.add_handler(CallbackQueryHandler(back_to_summary, pattern="^backto_"))
+    app.add_handler(CallbackQueryHandler(edit_question_trigger, pattern="^edquestion_"))
     
     app.add_handler(PollAnswerHandler(track_poll_answers))
     
