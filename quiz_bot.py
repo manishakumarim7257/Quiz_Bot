@@ -1107,7 +1107,7 @@ def main():
                 TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_title)],
                 DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_desc), CommandHandler("skip", receive_desc)],
                 QUESTIONS: [CommandHandler("undo", handle_undo), CommandHandler("done", finish_quiz_creation), MessageHandler(filters.POLL, receive_poll)],
-                PRE_MESSAGE: [MessageHandler(filters.TEXT | filters.PHOTO | filters.VIDEO | filters.DOCUMENT | filters.ANIMATION, receive_pre_message), CommandHandler("skip", receive_pre_message)],
+                PRE_MESSAGE: [MessageHandler(filters.TEXT | filters.PHOTO | filters.VIDEO | filters.Document.ALL | filters.ANIMATION, receive_pre_message), CommandHandler("skip", receive_pre_message)],
                 TIMER: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_timer_text)]
             },
             fallbacks=[CommandHandler("cancel", cancel)],
